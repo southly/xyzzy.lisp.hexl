@@ -69,14 +69,14 @@ and \"-de\" when dehexlifying a buffer."
   )
 
 (defvar hexlify-command
-  (format nil "\"~A\" ~A"
+  (format nil "~A ~A"
           hexl-program
           hexl-options)
   "The command to use to hexlify a buffer."
   )
 
 (defvar dehexlify-command
-  (format nil "\"~A\" -de ~A"
+  (format nil "~A -de ~A"
           hexl-program
           hexl-options)
   "The command to use to unhexlify a buffer."
