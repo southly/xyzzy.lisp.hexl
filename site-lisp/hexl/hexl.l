@@ -53,7 +53,7 @@
 ;; vars here
 ;;
 
-(defvar hexl-program (merge-pathnames "hexl" (etc-path))
+(defvar hexl-program (merge-pathnames "etc/hexl" (si:system-root))
   "The program that will hexlify and dehexlify its stdin.
 `hexl-program' will always be concatenated with `hexl-options'
 and \"-de\" when dehexlifying a buffer."
@@ -64,19 +64,19 @@ and \"-de\" when dehexlifying a buffer."
 \"-iso\" otherwise it should be \"\"."
   )
 
-(defvar hexl-options (format nil "-hex ~a" hexl-iso)
+(defvar hexl-options (format nil "-hex ~A" hexl-iso)
   "Options to hexl-program that suit your needs."
   )
 
 (defvar hexlify-command
-  (format nil "~a ~a"
+  (format nil "\"~A\" ~A"
           hexl-program
           hexl-options)
   "The command to use to hexlify a buffer."
   )
 
 (defvar dehexlify-command
-  (format nil "~a -de ~a"
+  (format nil "\"~A\" -de ~A"
           hexl-program
           hexl-options)
   "The command to use to unhexlify a buffer."
@@ -168,22 +168,24 @@ You can use \\[hexl-find-file] to visit a file in Hexl mode.
   (unless (eq buffer-mode 'hexl-mode)
     (let ((mode buffer-mode))
       (kill-all-local-variables)
+      (let ((buffer-read-only nil))
+        (declare (special buffer-read-only))
 
-      (setq buffer-mode 'hexl-mode)
-      (setq mode-name "Hexl")
-      (use-keymap hexl-mode-map)
-      (use-syntax-table ed::*fundamental-mode-syntax-table*)
-      (make-local-variable 'hexl-max-address)
-      (setq hexl-max-address (1- (file-length (get-buffer-file-name))))
-      (hexlify-buffer)
+        (setq buffer-mode 'hexl-mode)
+        (setq mode-name "Hexl")
+        (use-keymap hexl-mode-map)
+        (use-syntax-table ed::*fundamental-mode-syntax-table*)
+        (make-local-variable 'hexl-max-address)
+        (setq hexl-max-address (1- (file-length (get-buffer-file-name))))
+        (hexlify-buffer)
 
-      (make-local-variable 'hexl-mode-old-major-mode)
-      (setq hexl-mode-old-major-mode mode)
-      (make-local-variable 'hexl-ascii-overlay)
-      (setq hexl-ascii-overlay nil)
-      (make-local-variable 'auto-save)
-      (setq auto-save nil)
-      (if hexl-follow-ascii (hexl-follow-ascii t))))
+        (make-local-variable 'hexl-mode-old-major-mode)
+        (setq hexl-mode-old-major-mode mode)
+        (make-local-variable 'hexl-ascii-overlay)
+        (setq hexl-ascii-overlay nil)
+        (make-local-variable 'auto-save)
+        (setq auto-save nil)
+        (if hexl-follow-ascii (hexl-follow-ascii t)))))
   (run-hooks 'hexl-mode-hook))
 
 (defun hexl-save-buffer ()
@@ -197,6 +199,7 @@ You can use \\[hexl-find-file] to visit a file in Hexl mode.
                 (tmp (get-buffer-create " HEXL")))
             (set-buffer tmp)
             (erase-buffer tmp)
+            (setup-temp-buffer tmp)
             (insert-buffer buf)
             (dehexlify-buffer-to-file file)))
         (update-visited-file-modtime)
@@ -223,7 +226,10 @@ You can use \\[hexl-find-file] to visit a file in Hexl mode.
   "Edit file FILENAME in hexl-mode.
 Switch to a buffer visiting file FILENAME, creating one in none exists."
   (interactive "fFilename: ")
-  (find-file filename)
+  (let ((*expected-fileio-encoding* *encoding-binary*)
+        (*expected-eol-code* *eol-lf*))
+    (declare (special *expected-fileio-encoding* *expected-eol-code*))
+    (find-file filename *encoding-binary*))
   (clear-message)
   (unless (eq buffer-mode 'hexl-mode)
     (hexl-mode)))
@@ -233,7 +239,9 @@ Switch to a buffer visiting file FILENAME, creating one in none exists."
 With arg, don't unhexlify buffer."
   (interactive "p")
   (unless arg
-    (let ((p (hexl-current-address)))
+    (let ((p (hexl-current-address))
+          (buffer-read-only nil))
+      (declare (special buffer-read-only))
       (dehexlify-buffer)
       (goto-char p)))
   (delete-hook '*post-command-hook* 'hexl-ascii-overlay-hook)
@@ -254,7 +262,7 @@ With arg, don't unhexlify buffer."
 		 (- current-column 41)
 	       (floor (- current-column  (floor current-column 5)) 2))))
     (when (interactive-p)
-      (message "Current address is ~d" hexl-address))
+      (message "Current address is ~D" hexl-address))
     hexl-address))
 
 (defun hexl-address-to-marker (address)
@@ -461,10 +469,10 @@ You may also type octal digits, to insert a character with that code."
   "Convert a binary buffer to hexl format.
 This discards the buffer's undo information."
   (and (buffer-modified-p)
-       (not(y-or-n-p "Converting to hexl format discards undo info; ok? "))
+       (not (y-or-n-p "Converting to hexl format discards undo info; ok? "))
        (error "Aborted"))
   (setq kept-undo-information nil)
-  (execute-shell-command (format nil "~a ~a" hexlify-command (get-buffer-file-name)) t (selected-buffer))
+  (execute-shell-command (format nil "~A \"~A\"" hexlify-command (get-buffer-file-name)) t (selected-buffer))
   (setq kept-undo-information (default-value 'kept-undo-information))
   (if (< (current-column) 10) (goto-column 10))
   (if (> (point) (hexl-address-to-marker hexl-max-address))
@@ -495,17 +503,17 @@ This discards the buffer's undo information."
   "Take a char and return its value as if it was a hex digit."
   (if (or (char-not-greaterp #\0 character #\9) (char-not-greaterp #\a character #\f))
       (digit-char-p character 16)
-    (error "Invalid hex digit `~c'" character)))
+    (error "Invalid hex digit `~C'" character)))
 
 (defun hexl-oct-char-to-integer (character)
   "Take a char and return its value as if it was a octal digit."
   (if (char-not-greaterp #\0 character #\7)
       (digit-char-p character 8)
-    (error "Invalid octal digit `~c'" character)))
+    (error "Invalid octal digit `~C'" character)))
 
 (defun hexl-printable-character (ch)
   "Return a displayable string for character CH."
-  (format nil "~c" (if hexl-iso
+  (format nil "~C" (if hexl-iso
                        (if (or (char< ch #\SPC) (char<= #\DEL ch #\x9f))
                            #\.
                          ch)
@@ -522,7 +530,7 @@ and their encoded form is inserted byte by byte."
          (hexl-insert-char ch num))
         (t
          (let (encoded)
-           (let* ((src (si:make-string-chunk (format nil "~c" ch)))
+           (let* ((src (si:make-string-chunk (format nil "~C" ch)))
                   (size (si:chunk-size src))
                   (chunk (si:make-chunk nil size src 0)))
              (dotimes (i (1- size))
@@ -631,14 +639,13 @@ element under the point is highlighted.
 Customize the variable `hexl-follow-ascii' to disable this feature."
   (interactive "p")
   (ed::toggle-mode 'hexl-ascii-overlay arg sv)
-  (if hexl-ascii-overlay
-      (progn
-        (add-hook '*post-command-hook* 'hexl-ascii-overlay-hook)
-        (setq hexl-follow-ascii t))
-    (progn
-      (clear-reverse-region)
-      (setq hexl-follow-ascii nil)
-      (delete-hook '*post-command-hook* 'hexl-ascii-overlay-hook))))
+  (cond (hexl-ascii-overlay
+         (add-hook '*post-command-hook* 'hexl-ascii-overlay-hook)
+         (setq hexl-follow-ascii t))
+        (t
+         (clear-reverse-region)
+         (setq hexl-follow-ascii nil)
+         (delete-hook '*post-command-hook* 'hexl-ascii-overlay-hook))))
 
 (defun hexl-ascii-overlay-hook ()
   (if (eq buffer-mode 'hexl-mode)
@@ -692,6 +699,7 @@ Customize the variable `hexl-follow-ascii' to disable this feature."
   (define-key hexl-mode-map #\C-y 'undefined)
   (define-key hexl-mode-map #\DEL 'undefined)
   (define-key hexl-mode-map #\Delete 'undefined)
+  (define-key hexl-mode-map #\Insert 'undefined)
 
   (define-key hexl-mode-map #\S-PageUp 'undefined)
   (define-key hexl-mode-map #\S-PageDown 'undefined)
@@ -733,9 +741,16 @@ Customize the variable `hexl-follow-ascii' to disable this feature."
   (define-key hexl-mode-map '(#\ESC #\C-o) 'hexl-insert-octal-char)
   (define-key hexl-mode-map '(#\ESC #\C-p) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\C-q) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\C-r) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\C-t) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\C-u) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\C-x) 'hexl-insert-hex-char)
+  (define-key hexl-mode-map '(#\ESC #\C-%) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\%) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\/) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\;) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\\) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\^) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\b) 'hexl-backward-word)
   (define-key hexl-mode-map '(#\ESC #\c) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\d) 'undefined)
@@ -746,6 +761,7 @@ Customize the variable `hexl-follow-ascii' to disable this feature."
   (define-key hexl-mode-map '(#\ESC #\k) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\l) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\q) 'undefined)
+  (define-key hexl-mode-map '(#\ESC #\r) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\s) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\t) 'undefined)
   (define-key hexl-mode-map '(#\ESC #\u) 'undefined)
@@ -759,12 +775,17 @@ Customize the variable `hexl-follow-ascii' to disable this feature."
 
   (define-key hexl-mode-map '(#\C-c #\C-c) 'hexl-mode-exit)
 
+  (define-key hexl-mode-map '(#\C-x #\#) 'undefined)
   (define-key hexl-mode-map '(#\C-x #\i) 'undefined)
   (define-key hexl-mode-map '(#\C-x #\[) 'hexl-beginning-of-1k-page)
   (define-key hexl-mode-map '(#\C-x #\]) 'hexl-end-of-1k-page)
+  (define-key hexl-mode-map '(#\C-x #\|) 'undefined)
+  (define-key hexl-mode-map '(#\C-x #\C-l) 'undefined)
   (define-key hexl-mode-map '(#\C-x #\C-p) 'undefined)
+  (define-key hexl-mode-map '(#\C-x #\C-r) 'undefined)
   (define-key hexl-mode-map '(#\C-x #\C-s) 'hexl-save-buffer)
-  (define-key hexl-mode-map '(#\C-x #\C-t) 'undefined))
+  (define-key hexl-mode-map '(#\C-x #\C-t) 'undefined)
+  (define-key hexl-mode-map '(#\C-x #\C-u) 'undefined))
 
 (provide "hexl/hexl")
 
